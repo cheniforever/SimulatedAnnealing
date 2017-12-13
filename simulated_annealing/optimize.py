@@ -2,15 +2,18 @@ import sys
 import time
 from copy import copy
 import random
+from sklearn.model_selection import KFold
 import sklearn.cross_validation as cross_validation
 from sklearn.base import clone
 import numpy as np
 from sklearn.metrics.scorer import get_scorer
 from sklearn.externals.joblib import Parallel, delayed
 from sklearn.cross_validation import _fit_and_score
+import pandas as pd
+
 
 class SimulatedAnneal(object):
-    def __init__(self, estimator, param_grid, scoring='f1_macro',
+    def __init__(self, estimator, param_grid, scoring='auc',scoring_sub='f1_macro',weight=[1,0],
                  T=10, T_min=0.0001, alpha=0.75, n_trans=10,
                  max_iter=300, max_runtime=300, cv=3,
                  verbose=False, refit=True, n_jobs=1, max_score=np.inf):
@@ -67,6 +70,8 @@ class SimulatedAnneal(object):
 
         # Exposed attributes
         self._scorer = scoring
+        self._scorer_sub=scoring_sub
+        self._weight=weight
         self.best_params_ = None
         self.best_score_ = None
         self.best_estimator_ = None
@@ -75,10 +80,18 @@ class SimulatedAnneal(object):
 
     def fit(self, X, y):
         # Set up  the initial params
+        if isinstance(X,pd.DataFrame):
+            X=X.as_matrix()
+        if isinstance(y,pd.DataFrame):
+            y=y.as_matrix()
+        elif isinstance(y,list) or isinstance(y, pd.Series):
+            y=np.array(y)
         T = self.__T
         T_min = self.__T_min
         alpha = self.__alpha
         score_func = self._scorer
+        score_func_sub=self._scorer_sub
+        weight_func=self._weight
         max_iter = self.__max_iter
         n_trans = self.__n_trans
         grid = self.__grid
@@ -102,7 +115,7 @@ class SimulatedAnneal(object):
             old_score, old_std = MultiProcCvFolds(old_est, score_func, cv, self.__n_jobs,
                                                   self.__verbose).fit_score(X, y)
         else:
-            old_score, old_std = CVFolds(old_est, scorer=score_func, cv=cv).fit_score(X, y)
+            old_score, old_std = CVFolds(old_est, scorer=score_func,scorer_sub=score_func_sub,weight=weight_func, cv=cv).fit_score(X, y)
 
         # Variables to hold the best params
         best_score = old_score
@@ -163,7 +176,7 @@ class SimulatedAnneal(object):
                 if self.__verbose:
                     print("%s T: %s, score: %s, std: %s, params: %s"
                           % (str(total_iter), '{:.5f}'.format(T),
-                             '{:.3f}'.format(new_score), '{:.3f}'.format(new_std),
+                             '{:.6f}'.format(new_score), '{:.6f}'.format(new_std),
                              str(new_params)))
 
                 # Decide whether to keep old params or move to new params
@@ -207,7 +220,7 @@ class MultiProcCvFolds(object):
     def fit_score(self, X, Y):
         if isinstance(self.cv, int):
             n_folds = self.cv
-            self.cv = cross_validation.KFold(len(Y), n_folds=n_folds)
+            self.cv = KFold(n_splits=n_folds).split(X)
 
         out = Parallel(
             n_jobs=self.n_jobs, verbose=self.verbose,
@@ -225,7 +238,7 @@ class MultiProcCvFolds(object):
 
 
 class CVFolds(object):
-    def __init__(self, estimator, scorer, cv=3):
+    def __init__(self, estimator, scorer,scorer_sub,weight, cv=3):
         try:
             cv = int(cv)
         except:
@@ -233,13 +246,17 @@ class CVFolds(object):
         self.__est = estimator
         self.__cv = cv
         self.__scorer = get_scorer(scorer)
+        self.__scorer_sub=get_scorer(scorer_sub)
+        self.__weight=weight
 
     def fit_score(self, X, y):
         if isinstance(self.__cv, int):
-            cross_valid = cross_validation.KFold(len(y), n_folds=self.__cv)
+            cross_valid = KFold(n_splits=self.__cv).split(X)
         else:
             cross_valid = self.__cv
         scorer = self.__scorer
+        scorer_sub=self.__scorer_sub
+        weight=self.__weight
         scores = []
         for train_index, test_index in cross_valid:
             X_train, X_test = X[train_index], X[test_index]
@@ -247,5 +264,7 @@ class CVFolds(object):
             est = clone(self.__est)
             est.fit(X_train, y_train)
             k_score = scorer(est, X_test, y_test)
-            scores.append(k_score)
+            k_score_sub=scorer_sub(est, X_test, y_test)
+            k_score_total=k_score*weight[0]+k_score_sub*weight[1]
+            scores.append(k_score_total)
         return (np.mean(scores), np.std(scores))
