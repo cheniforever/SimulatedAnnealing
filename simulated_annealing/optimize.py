@@ -3,12 +3,11 @@ import time
 from copy import copy
 import random
 from sklearn.model_selection import KFold
-import sklearn.cross_validation as cross_validation
 from sklearn.base import clone
 import numpy as np
 from sklearn.metrics.scorer import get_scorer
 from sklearn.externals.joblib import Parallel, delayed
-from sklearn.cross_validation import _fit_and_score
+from sklearn.model_selection._validation import _fit_and_score
 import pandas as pd
 
 
