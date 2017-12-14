@@ -11,6 +11,7 @@ setup(
     keywords = ["simulated", "annealing", "parameter", "hyperparameter", "optimization", "optimisation", "model", "selection"],
     license = "Apache 2.0",
     install_requires = ['scikit-learn>=0.16.0', 'numpy>=1.9.0'],
+    dependency_links=['https://github.com/cheniforever/SimulatedAnnealing.git'],
     classifiers = ["Programming Language :: Python",
     			   "Programming Language :: Python :: 2.7",
     			   "Programming Language :: Python :: 2",
