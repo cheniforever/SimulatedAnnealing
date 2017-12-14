@@ -13,7 +13,7 @@ import pandas as pd
 
 
 class SimulatedAnneal(object):
-    def __init__(self, estimator, param_grid, scoring='auc',scoring_sub='f1_macro',weight=[1,0],
+    def __init__(self, estimator, param_grid, scoring=['auc'],weight=[1,0],
                  T=10, T_min=0.0001, alpha=0.75, n_trans=10,
                  max_iter=300, max_runtime=300, cv=3,
                  verbose=False, refit=True, n_jobs=1, max_score=np.inf):
@@ -70,7 +70,6 @@ class SimulatedAnneal(object):
 
         # Exposed attributes
         self._scorer = scoring
-        self._scorer_sub=scoring_sub
         self._weight=weight
         self.best_params_ = None
         self.best_score_ = None
@@ -90,7 +89,6 @@ class SimulatedAnneal(object):
         T_min = self.__T_min
         alpha = self.__alpha
         score_func = self._scorer
-        score_func_sub=self._scorer_sub
         weight_func=self._weight
         max_iter = self.__max_iter
         n_trans = self.__n_trans
@@ -115,7 +113,7 @@ class SimulatedAnneal(object):
             old_score, old_std = MultiProcCvFolds(old_est, score_func, cv, self.__n_jobs,
                                                   self.__verbose).fit_score(X, y)
         else:
-            old_score, old_std = CVFolds(old_est, scorer=score_func,scorer_sub=score_func_sub,weight=weight_func, cv=cv).fit_score(X, y)
+            old_score, old_std = CVFolds(old_est, scorer=score_func,weight=weight_func, cv=cv).fit_score(X, y)
 
         # Variables to hold the best params
         best_score = old_score
@@ -177,7 +175,7 @@ class SimulatedAnneal(object):
                     print("%s T: %s, score: %s, std: %s, params: %s"
                           % (str(total_iter), '{:.5f}'.format(T),
                              '{:.6f}'.format(new_score), '{:.6f}'.format(new_std),
-                             str(new_params)))
+                             str({key: round(value, 3) for key, value in new_params.items()})))
 
                 # Decide whether to keep old params or move to new params
                 a = accept_prob(old_score, new_score, T)
@@ -211,7 +209,7 @@ class MultiProcCvFolds(object):
             cv = cv
 
         self.clf = clf
-        self.metric = get_scorer(metric)
+        self.metric = get_scorer(metric[0])
         self.cv = cv
         self.n_jobs = n_jobs
         self.verbose = verbose
@@ -238,15 +236,14 @@ class MultiProcCvFolds(object):
 
 
 class CVFolds(object):
-    def __init__(self, estimator, scorer,scorer_sub,weight, cv=3):
+    def __init__(self, estimator, scorer,weight, cv=3):
         try:
             cv = int(cv)
         except:
             cv = cv
         self.__est = estimator
         self.__cv = cv
-        self.__scorer = get_scorer(scorer)
-        self.__scorer_sub=get_scorer(scorer_sub)
+        self.__scorer = scorer
         self.__weight=weight
 
     def fit_score(self, X, y):
@@ -255,7 +252,6 @@ class CVFolds(object):
         else:
             cross_valid = self.__cv
         scorer = self.__scorer
-        scorer_sub=self.__scorer_sub
         weight=self.__weight
         scores = []
         for train_index, test_index in cross_valid:
@@ -263,8 +259,8 @@ class CVFolds(object):
             y_train, y_test = y[train_index], y[test_index]
             est = clone(self.__est)
             est.fit(X_train, y_train)
-            k_score = scorer(est, X_test, y_test)
-            k_score_sub=scorer_sub(est, X_test, y_test)
-            k_score_total=k_score*weight[0]+k_score_sub*weight[1]
-            scores.append(k_score_total)
+            k_score=0
+            for i in range(len(scorer)):
+                k_score = k_score+get_scorer(scorer[i])(est, X_test, y_test)*weight[i]
+                scores.append(k_score)
         return (np.mean(scores), np.std(scores))
